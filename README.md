@@ -255,4 +255,155 @@ def get_file(file_id):
   2. Use low-privilege accounts to attempt access to high-privilege resources.
   3. Inject manipulated parameters in API requests.
 
-By implementing these strategies and testing rigorously, you can prevent object-level authorization vulnerabilities.
+Using **Burp Suite** for testing authorization vulnerabilities, including **object-level authorization bypass**, is a common practice. Here’s a step-by-step guide to identify and exploit such issues, along with examples and tips.
+
+---
+
+### **Step 1: Configure Burp Suite**
+1. **Set Up Proxy**  
+   - Configure Burp Suite as a proxy in your browser to intercept HTTP/HTTPS traffic.
+   - Add your application's domain to the **target scope** to limit scanning.
+
+2. **Enable Interception**  
+   - Ensure interception is enabled for the requests you want to analyze.
+
+3. **Set Up User Accounts**  
+   - Prepare two user accounts:
+     - **Low-privileged user** (e.g., regular user)
+     - **High-privileged user** (e.g., admin or owner of resources)
+
+---
+
+### **Step 2: Manual Testing for Object-Level Authorization**
+1. **Identify Object IDs**  
+   - Browse the application as the low-privileged user and look for object identifiers (IDs) in:
+     - URLs (`/orders/123`, `/users/456`)
+     - Query parameters (`?id=789`)
+     - JSON payloads (`{"order_id": 101}`)
+
+2. **Intercept Requests**  
+   - Use the **Proxy** tab to capture and modify requests.  
+   Example request:  
+   ```http
+   GET /api/orders/123 HTTP/1.1
+   Host: example.com
+   Authorization: Bearer <low-privilege-user-token>
+   ```
+
+3. **Modify Object IDs**  
+   - Change the `123` in the request to a value that you suspect might belong to another user (e.g., `124`).
+
+4. **Send Modified Requests**  
+   - Send the modified request to the server.  
+   - Observe if unauthorized data is returned.
+
+---
+
+### **Step 3: Automate Testing with Burp Extensions**
+1. **Use the Autorize Extension**  
+   - **Autorize** automatically tests endpoints for authorization issues by replaying requests with tokens from other users.  
+   Steps:
+   - Install **Autorize** via the BApp Store.
+   - Configure low-privilege and high-privilege tokens:
+     - Paste the **low-privilege user token** as the unauthorized token.
+     - Set the **high-privilege token** as the authorized token.
+   - Enable **Autorize** to monitor requests in real-time.
+
+2. **Analyze Results**  
+   - Autorize highlights unauthorized access if a low-privileged user can access or manipulate high-privilege resources.
+
+---
+
+### **Step 4: Advanced Techniques**
+1. **Parameter Fuzzing**  
+   Use **Intruder** to automate testing for predictable object IDs:
+   - Send the request to **Intruder**.
+   - Define the parameter to fuzz (e.g., the `order_id` in `/orders/{order_id}`).
+   - Use a payload generator (e.g., sequential numbers or wordlists) to test multiple IDs.
+
+   Example fuzzing payload:
+   ```
+   101
+   102
+   103
+   ...
+   ```
+
+2. **Session Hijacking**  
+   Test if session tokens from one user work for another user:
+   - Intercept requests from both accounts.
+   - Replace the session token of the low-privileged user with the high-privileged user's token.
+   - Send the modified request to see if unauthorized access is granted.
+
+3. **JWT Manipulation**  
+   - Decode JWT tokens using **jwt.io** or Burp's **JSON Web Token Editor**.
+   - Test altering the `user_id` or `role` claims:
+     - Example before:
+       ```json
+       { "user_id": 123, "role": "user" }
+       ```
+     - Example after:
+       ```json
+       { "user_id": 124, "role": "admin" }
+       ```
+
+4. **Mass Assignment**  
+   - Send payloads with unexpected parameters to test if sensitive fields can be altered:
+     ```json
+     {
+       "username": "user123",
+       "isAdmin": true
+     }
+     ```
+
+---
+
+### **Example: Burp Suite in Action**
+#### Application: Banking App
+- Endpoint: `/api/v1/accounts/{account_id}`  
+- Low-privilege user has access to `GET /api/v1/accounts/101`.
+
+#### Steps:
+1. **Capture and Modify Request**  
+   Intercept the request and replace the account ID:
+   ```http
+   GET /api/v1/accounts/102 HTTP/1.1
+   Host: bank.example.com
+   Authorization: Bearer <low-privilege-user-token>
+   ```
+
+2. **Send the Request**  
+   - Check if unauthorized data is returned.
+   - Example unauthorized response:
+     ```json
+     {
+       "account_id": 102,
+       "balance": 5000,
+       "owner": "HighPrivilegeUser"
+     }
+     ```
+
+3. **Use Autorize**  
+   - Configure tokens for low-privilege and high-privilege users.
+   - Autorize flags access to `account_id=102` as unauthorized.
+
+---
+
+### **Step 5: Reporting Findings**
+When you discover vulnerabilities:
+1. Document the exact steps to reproduce the issue.
+2. Provide HTTP request/response examples.
+3. Highlight the impact (e.g., access to sensitive user data or privilege escalation).
+4. Suggest fixes:
+   - Enforce object-level authorization checks.
+   - Use opaque identifiers (e.g., UUIDs).
+   - Log and monitor unauthorized access attempts.
+
+---
+
+### **Additional Tips**
+- **Practice Ethical Hacking:** Always have proper authorization from the application owner before testing.
+- **Regularly Update Burp Suite:** New features and extensions are regularly added.
+- **Integrate with CI/CD:** Use Burp Suite Enterprise for automated scans in your DevOps pipeline.
+
+Using Burp Suite effectively will help uncover and secure vulnerabilities related to object-level authorization.
