@@ -401,9 +401,266 @@ When you discover vulnerabilities:
 
 ---
 
-### **Additional Tips**
-- **Practice Ethical Hacking:** Always have proper authorization from the application owner before testing.
-- **Regularly Update Burp Suite:** New features and extensions are regularly added.
-- **Integrate with CI/CD:** Use Burp Suite Enterprise for automated scans in your DevOps pipeline.
+Here are additional **examples of Burp Suite techniques** to find and exploit authorization vulnerabilities in various scenarios, including APIs, file uploads, and more. Each example uses Burp Suite's features like **Proxy**, **Intruder**, and **Extensions**.
 
-Using Burp Suite effectively will help uncover and secure vulnerabilities related to object-level authorization.
+---
+
+### **Example 18: API Endpoint Authorization Check**
+#### Scenario:
+A web application has an API endpoint for fetching sensitive financial data:  
+```http
+GET /api/v1/accounts/{account_id}
+```
+
+#### Steps in Burp Suite:
+1. **Intercept a Legitimate Request**  
+   Use a logged-in low-privilege user to send a request:
+   ```http
+   GET /api/v1/accounts/101 HTTP/1.1
+   Authorization: Bearer <low-privilege-token>
+   ```
+
+2. **Modify the `account_id`:**
+   Change `101` to `102` to test access to another user's account.
+
+3. **Send Modified Request via Burp Repeater:**
+   Send the modified request and observe the response:
+   ```json
+   {
+     "account_id": 102,
+     "balance": "5000.00",
+     "owner": "other_user"
+   }
+   ```
+
+4. **Automate Testing with Intruder:**
+   - Send the request to **Intruder**.
+   - Set the `account_id` as the payload position.
+   - Use a sequential payload (e.g., numbers from `100` to `200`).
+
+   **Intruder Response Analysis:**  
+   If you receive valid responses for IDs other than your own, the API is vulnerable.
+
+#### Solution:
+Enforce ownership validation on the server:
+```python
+if account.owner_id != current_user.id:
+    abort(403)  # Forbidden
+```
+
+---
+
+### **Example 19: Hidden Admin Endpoints**
+#### Scenario:
+A hidden admin page exists at `/admin/panel`.
+
+#### Steps in Burp Suite:
+1. **Content Discovery:**
+   - Use **Intruder** or **Content Discovery Extensions** like **Burp Buster** or **Content Discovery by BApp**.
+   - Test for common admin paths (`/admin`, `/admin/panel`, `/admin/login`).
+
+2. **Access the Endpoint:**
+   Attempt to access the endpoint using a low-privilege user's session:
+   ```http
+   GET /admin/panel HTTP/1.1
+   Authorization: Bearer <low-privilege-token>
+   ```
+
+3. **Bypass Login Page:**
+   If the admin page is accessible without additional authentication, it indicates a serious vulnerability.
+
+#### Solution:
+Restrict access to admin endpoints using role-based access control (RBAC).
+
+---
+
+###  File Download Abuse**
+#### Scenario:
+A file-sharing app allows downloading shared files via:
+```http
+GET /files/{file_id}/download
+```
+
+#### Steps in Burp Suite:
+1. **Capture a Download Request:**
+   ```http
+   GET /files/123/download HTTP/1.1
+   Authorization: Bearer <low-privilege-token>
+   ```
+
+2. **Modify the `file_id`:**
+   Change `123` to `124` and send it through **Burp Repeater**.
+
+3. **Check the Response:**
+   If the file belonging to another user is accessible, it indicates a lack of ownership validation.
+
+#### Solution:
+Validate file ownership in the backend:
+```python
+if file.owner_id != current_user.id:
+    abort(403)
+```
+
+---
+
+### **Example 21: JWT Manipulation**
+#### Scenario:
+An application uses JSON Web Tokens (JWTs) for authentication:
+```http
+Authorization: Bearer <jwt_token>
+```
+
+#### Steps in Burp Suite:
+1. **Capture the JWT:**
+   Use Burp Proxy to intercept a request with a valid JWT token.
+
+2. **Decode and Modify the Token:**
+   - Decode the JWT using **JWT Editor** in Burp Suite.
+   - Modify claims like `user_id` or `role`:
+     ```json
+     {
+       "user_id": 123,
+       "role": "admin"
+     }
+     ```
+
+3. **Re-Encode and Replay:**
+   Replace the original JWT with the modified one and send the request:
+   ```http
+   GET /admin/panel HTTP/1.1
+   Authorization: Bearer <modified-jwt-token>
+   ```
+
+4. **Check for Authorization Bypass:**
+   If the server does not verify the token signature or claims, you may gain unauthorized access.
+
+#### Solution:
+- Use strong JWT signing keys.
+- Always verify JWT signatures and claims server-side.
+
+---
+
+### **Example 22: Bulk Actions**
+#### Scenario:
+An admin tool supports bulk user updates via:
+```http
+POST /admin/users/update
+Payload:
+{
+  "user_ids": [101, 102, 103],
+  "role": "admin"
+}
+```
+
+#### Steps in Burp Suite:
+1. **Capture the Request:**
+   Intercept the request made by a legitimate admin.
+
+2. **Replay as a Low-Privilege User:**
+   Replace the admin's token with a low-privilege token.
+
+3. **Modify the Payload:**
+   Add unauthorized user IDs:
+   ```json
+   {
+     "user_ids": [104, 105],
+     "role": "admin"
+   }
+   ```
+
+4. **Send the Request:**
+   If the server processes the request, it indicates a mass-assignment or privilege escalation vulnerability.
+
+#### Solution:
+Validate all user IDs and roles in the payload:
+```python
+if not current_user.is_admin:
+    abort(403)
+```
+
+---
+
+### **Example 23: Bypassing Role Checks**
+#### Scenario:
+A user with a "user" role accesses endpoints intended for "admin" users:
+```http
+GET /admin/users HTTP/1.1
+Authorization: Bearer <low-privilege-token>
+```
+
+#### Steps in Burp Suite:
+1. **Modify the Request:**
+   Intercept the request and change the role in the payload or token:
+   ```json
+   { "role": "admin" }
+   ```
+
+2. **Replay the Request:**
+   If the server grants access, it indicates improper role validation.
+
+#### Solution:
+Implement strict role-based access control (RBAC) on all admin endpoints.
+
+---
+
+### **Example 24: IDOR in Account Transfers**
+#### Scenario:
+A banking application has a transfer endpoint:
+```http
+POST /api/transfer
+Payload:
+{
+  "from_account": 101,
+  "to_account": 102,
+  "amount": 100
+}
+```
+
+#### Steps in Burp Suite:
+1. **Intercept and Modify the Request:**
+   Change `from_account` to an account ID that doesn’t belong to the logged-in user.
+
+2. **Replay the Request:**
+   If the transfer succeeds, the API is vulnerable to IDOR.
+
+#### Solution:
+Validate ownership of `from_account`:
+```python
+if from_account.owner_id != current_user.id:
+    abort(403)
+```
+
+---
+
+### **Example 25: WebSocket Authorization**
+#### Scenario:
+A WebSocket API allows subscribing to chat rooms based on `room_id`.
+
+#### Steps in Burp Suite:
+1. **Intercept WebSocket Messages:**
+   Use Burp Suite's WebSocket support to capture messages:
+   ```json
+   { "action": "subscribe", "room_id": "private-room-123" }
+   ```
+
+2. **Modify `room_id`:**
+   Change the room ID to a private room not accessible by the current user.
+
+3. **Send Modified Request:**
+   If the user gains unauthorized access to private messages, it indicates a vulnerability.
+
+#### Solution:
+Validate room membership on subscription:
+```python
+if not current_user.is_member_of(room_id):
+    abort(403)
+```
+
+---
+
+### **Next Steps**
+- Use **Burp Extensions** like **Autorize** and **JWT Editor** to automate common tests.
+- Combine **Intruder** with fuzzing tools to identify predictable object IDs or roles.
+- Document vulnerabilities clearly, including the exact steps to reproduce and suggestions for mitigation. 
+
+By combining these techniques, Burp Suite becomes a powerful tool to uncover authorization vulnerabilities across various scenarios.
